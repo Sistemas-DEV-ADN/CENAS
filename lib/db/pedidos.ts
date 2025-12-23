@@ -117,7 +117,8 @@ export async function crearPedido(
         cantidad: item.cantidad,
         precio_unitario: item.precio_unitario,
         subtotal: item.subtotal,
-        notas: item.notas || ''
+        notas: item.notas || '',
+        estado: item.estado
     }));
 
     const { data: nuevoPedido, error } = await supabase.rpc('crear_pedido_completo', {

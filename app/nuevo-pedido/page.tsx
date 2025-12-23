@@ -80,7 +80,8 @@ export default function NuevoPedidoPage() {
                 notas: item.notas,
                 precio_unitario: item.precioUnitario,
                 subtotal: item.subtotal,
-                salsa_id: item.salsaId
+                salsa_id: item.salsaId,
+                estado: 'pendiente'
             }));
 
             await crearPedido(
