@@ -20,8 +20,9 @@ export function getPreparationStartTime(
 ): Date {
     const hoursBeforeDelivery = PREPARATION_TIMES[category];
 
-    // Crear fecha para el 24 de diciembre de 2025
-    const deliveryDate = new Date('2025-12-24');
+    // Crear fecha para el 31 de diciembre del año actual
+    const year = new Date().getFullYear();
+    const deliveryDate = new Date(year, 11, 31); // Mes 11 es Diciembre
     const [hours, minutes] = deliveryTime.split(':').map(Number);
     deliveryDate.setHours(hours, minutes, 0, 0);
 

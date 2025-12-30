@@ -13,6 +13,7 @@ interface ItemPreparacion {
     cliente: string;
     itemNombre: string;
     variante?: string;
+    salsa?: string;
     cantidad: number;
     categoria: Categoria;
     horarioEntrega: string;
@@ -20,8 +21,21 @@ interface ItemPreparacion {
     estado: 'pendiente' | 'preparando' | 'listo'; // Estado del item, no del tiempo
 }
 
+interface PlatilloAgrupado {
+    nombrePlatillo: string;
+    cantidadTotal: number;
+    categoria: Categoria;
+    items: ItemPreparacion[];
+    estadoConsolidado: {
+        pendientes: number;
+        preparando: number;
+        listos: number;
+    };
+    desgloseVariantes: Record<string, number>;
+}
+
 export default function PrepararPage() {
-    const [vista, setVista] = useState<'categorias' | 'timeline'>('categorias');
+    const [vista, setVista] = useState<'categorias' | 'timeline' | 'platillos'>('categorias');
     const [items, setItems] = useState<ItemPreparacion[]>([]);
     const [loading, setLoading] = useState(true);
     const [mostrarTerminados, setMostrarTerminados] = useState(false); // Estado para toggle
@@ -45,12 +59,16 @@ export default function PrepararPage() {
                     // Usamos el estado real de la BD, no calculado
                     // const estado = getPreparationStatus(horaPrep); 
 
+                    // Tipado manual porque la definición de ItemPedido en items prep puede no estar completa en el frontend
+                    const itemAny = item as any;
+
                     itemsPrep.push({
                         id: item.id,
                         pedidoNumero: pedido.numero_pedido,
                         cliente: pedido.cliente,
                         itemNombre: item.items_menu.nombre,
                         variante: item.variantes_menu?.nombre,
+                        salsa: itemAny.salsa?.nombre, // Acceder a la salsa
                         cantidad: item.cantidad,
                         categoria,
                         horarioEntrega: pedido.horario_entrega,
@@ -115,6 +133,61 @@ export default function PrepararPage() {
         // Luego por hora
         return a.horaPreparacion.getTime() - b.horaPreparacion.getTime();
     });
+
+    // Agrupar por platillo
+    const agruparPorPlatillo = (): PlatilloAgrupado[] => {
+        const grupos = new Map<string, PlatilloAgrupado>();
+
+        items.forEach(item => {
+            // Filtrar terminados si toggle está apagado
+            if (!mostrarTerminados && item.estado === 'listo') return;
+
+            const clave = item.itemNombre; // Agrupar solo por nombre del item
+
+            if (!grupos.has(clave)) {
+                grupos.set(clave, {
+                    nombrePlatillo: item.itemNombre,
+                    cantidadTotal: 0,
+                    categoria: item.categoria,
+                    items: [],
+                    estadoConsolidado: {
+                        pendientes: 0,
+                        preparando: 0,
+                        listos: 0
+                    },
+                    desgloseVariantes: {}
+                });
+            }
+
+            const grupo = grupos.get(clave)!;
+            grupo.cantidadTotal += item.cantidad;
+            grupo.items.push(item);
+
+            // Desglose por variante y salsa
+            let detalle = '';
+            if (item.variante && item.salsa) {
+                detalle = `${item.variante} + ${item.salsa}`;
+            } else if (item.variante) {
+                detalle = item.variante;
+            } else if (item.salsa) {
+                detalle = item.salsa;
+            }
+
+            if (detalle) {
+                grupo.desgloseVariantes[detalle] = (grupo.desgloseVariantes[detalle] || 0) + item.cantidad;
+            }
+
+            // Contar estados
+            if (item.estado === 'pendiente') grupo.estadoConsolidado.pendientes += item.cantidad;
+            else if (item.estado === 'preparando') grupo.estadoConsolidado.preparando += item.cantidad;
+            else if (item.estado === 'listo') grupo.estadoConsolidado.listos += item.cantidad;
+        });
+
+        return Array.from(grupos.values())
+            .sort((a, b) => b.cantidadTotal - a.cantidadTotal); // Mayor a menor
+    };
+
+    const platillosAgrupados = agruparPorPlatillo();
 
     const formatTime = (date: Date) => {
         return date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
@@ -186,7 +259,7 @@ export default function PrepararPage() {
                         <div className="flex gap-2 bg-white p-1 rounded-lg border border-[var(--border-color)] self-start">
                             <button
                                 onClick={() => setVista('categorias')}
-                                className={`px-4 py-2 rounded-md transition-all font-medium ${vista === 'categorias'
+                                className={`px-4 py-2 rounded-md transition-all font-medium text-sm ${vista === 'categorias'
                                     ? 'bg-[var(--primary)] text-white'
                                     : 'text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]'
                                     }`}
@@ -195,12 +268,21 @@ export default function PrepararPage() {
                             </button>
                             <button
                                 onClick={() => setVista('timeline')}
-                                className={`px-4 py-2 rounded-md transition-all font-medium ${vista === 'timeline'
+                                className={`px-4 py-2 rounded-md transition-all font-medium text-sm ${vista === 'timeline'
                                     ? 'bg-[var(--primary)] text-white'
                                     : 'text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]'
                                     }`}
                             >
                                 Cronología
+                            </button>
+                            <button
+                                onClick={() => setVista('platillos')}
+                                className={`px-4 py-2 rounded-md transition-all font-medium text-sm ${vista === 'platillos'
+                                    ? 'bg-[var(--primary)] text-white'
+                                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]'
+                                    }`}
+                            >
+                                Por Platillo
                             </button>
                         </div>
                     </div>
@@ -272,6 +354,11 @@ export default function PrepararPage() {
                                                                             {item.variante}
                                                                         </div>
                                                                     )}
+                                                                    {item.salsa && (
+                                                                        <div className="text-sm text-orange-600 font-medium mt-0.5">
+                                                                            + Salsa: {item.salsa}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
 
                                                                 {/* Tiempos */}
@@ -320,6 +407,77 @@ export default function PrepararPage() {
                                     );
                                 }
                             )}
+                        </div>
+                    ) : vista === 'platillos' ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {platillosAgrupados.map((platillo, idx) => (
+                                <div
+                                    key={`${platillo.nombrePlatillo}-${idx}`}
+                                    className="card p-0 overflow-hidden animate-slide-up bg-white h-full flex flex-col"
+                                    style={{ animationDelay: `${idx * 50}ms` }}
+                                >
+                                    <div className="p-4 bg-gray-50 border-b">
+                                        <h3 className="text-lg font-bold text-gray-800 leading-tight">
+                                            {platillo.nombrePlatillo}
+                                        </h3>
+                                        <div className="mt-1">
+                                            <span className="badge badge-primary text-[10px] px-2 py-0.5 opacity-80">
+                                                {getCategoriaTexto(platillo.categoria)}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-6 flex-1 flex flex-col items-center text-center">
+                                        <span className="text-xs text-gray-400 uppercase tracking-wider mb-2 font-semibold">Total Unidades</span>
+                                        <div className="text-6xl font-black text-[var(--primary)] mb-4 tracking-tight">
+                                            {platillo.cantidadTotal}
+                                        </div>
+
+                                        {/* Desglose de Variantes */}
+                                        {Object.keys(platillo.desgloseVariantes).length > 0 && (
+                                            <div className="w-full mb-6 bg-gray-50 rounded-lg p-3 text-left">
+                                                <div className="text-xs text-gray-400 font-bold uppercase mb-2">Desglose:</div>
+                                                <ul className="space-y-1">
+                                                    {Object.entries(platillo.desgloseVariantes).map(([variante, cantidad]) => (
+                                                        <li key={variante} className="flex justify-between items-center text-sm">
+                                                            <span className="text-gray-600 font-medium">{variante}</span>
+                                                            <span className="font-bold text-[var(--primary)]">{cantidad}</span>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+
+                                        <div className="w-full grid grid-cols-3 gap-3 text-center mt-auto">
+                                            <div className={`rounded-xl p-3 border transition-colors ${platillo.estadoConsolidado.pendientes > 0 ? 'bg-gray-50 border-gray-200' : 'bg-gray-50/50 border-gray-100 opacity-50'}`}>
+                                                <div className="font-bold text-xl text-gray-700">{platillo.estadoConsolidado.pendientes}</div>
+                                                <div className="text-[10px] uppercase font-bold text-gray-400">Pendientes</div>
+                                            </div>
+                                            <div className={`rounded-xl p-3 border transition-colors ${platillo.estadoConsolidado.preparando > 0 ? 'bg-blue-50 border-blue-200' : 'bg-blue-50/30 border-blue-100 opacity-50'}`}>
+                                                <div className="font-bold text-xl text-blue-700">{platillo.estadoConsolidado.preparando}</div>
+                                                <div className="text-[10px] uppercase font-bold text-blue-400">Cocinando</div>
+                                            </div>
+                                            <div className={`rounded-xl p-3 border transition-colors ${platillo.estadoConsolidado.listos > 0 ? 'bg-green-50 border-green-200' : 'bg-green-50/30 border-green-100 opacity-50'}`}>
+                                                <div className="font-bold text-xl text-green-700">{platillo.estadoConsolidado.listos}</div>
+                                                <div className="text-[10px] uppercase font-bold text-green-400">Listos</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 bg-gray-50 border-t text-xs text-gray-400 text-center flex justify-between px-6">
+                                        <span>{platillo.items.length} pedidos</span>
+                                        {platillo.estadoConsolidado.pendientes === 0 && platillo.estadoConsolidado.preparando === 0 ? (
+                                            <span className="text-green-600 font-bold flex items-center gap-1">
+                                                ✅ Completado
+                                            </span>
+                                        ) : (
+                                            <span className="text-[var(--accent)] font-medium">
+                                                En progreso...
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     ) : (
                         <div className="max-w-3xl mx-auto space-y-4">

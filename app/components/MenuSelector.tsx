@@ -19,11 +19,22 @@ interface MenuSelectorProps {
         nombreSalsa?: string;
         notas?: string;
     }) => void;
+    initialItem?: {
+        itemMenuId: string;
+        nombreItem: string;
+        varianteId?: string;
+        nombreVariante?: string;
+        cantidad: number;
+        precioUnitario: number;
+        salsaId?: string;
+        nombreSalsa?: string;
+        notas?: string;
+    } | null;
 }
 
 type Step = 'categorias' | 'items' | 'detalles';
 
-export default function MenuSelector({ isOpen, onClose, onSelect }: MenuSelectorProps) {
+export default function MenuSelector({ isOpen, onClose, onSelect, initialItem }: MenuSelectorProps) {
     const [step, setStep] = useState<Step>('categorias');
     const [loading, setLoading] = useState(true);
     const [allItems, setAllItems] = useState<ItemMenuConVariantes[]>([]);
@@ -43,9 +54,41 @@ export default function MenuSelector({ isOpen, onClose, onSelect }: MenuSelector
     useEffect(() => {
         if (isOpen) {
             cargarDatos();
-            resetearSeleccion();
+            // Si no hay edición, reseteamos. Si hay edición, el reset se maneja después de cargar datos
+            if (!initialItem) {
+                resetearSeleccion();
+            }
         }
     }, [isOpen]);
+
+    // Efecto para manejar la carga inicial en modo edición
+    useEffect(() => {
+        if (isOpen && initialItem && allItems.length > 0) {
+            const item = allItems.find(i => i.id === initialItem.itemMenuId);
+            if (item) {
+                setItemSeleccionado(item);
+                setCantidad(initialItem.cantidad);
+                setNotas(initialItem.notas || '');
+                setStep('detalles');
+
+                // Pre-seleccionar variante si existe
+                if (initialItem.varianteId && item.variantes_menu) {
+                    const variante = item.variantes_menu.find(v => v.id === initialItem.varianteId);
+                    setVarianteSeleccionada(variante || null);
+                } else {
+                    setVarianteSeleccionada(null);
+                }
+
+                // Pre-seleccionar salsa si existe
+                if (initialItem.salsaId && salsasItems.length > 0) {
+                    const salsa = salsasItems.find(s => s.id === initialItem.salsaId);
+                    setSalsaSeleccionada(salsa || null);
+                } else {
+                    setSalsaSeleccionada(null);
+                }
+            }
+        }
+    }, [isOpen, initialItem, allItems, salsasItems]);
 
     const cargarDatos = async () => {
         try {
@@ -321,15 +364,34 @@ export default function MenuSelector({ isOpen, onClose, onSelect }: MenuSelector
                                         <label className="label mb-2">Cantidad ({itemSeleccionado.unidad_medida})</label>
                                         <div className="flex items-center gap-4">
                                             <button
-                                                onClick={() => setCantidad(Math.max(1, cantidad - 1))}
-                                                className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center font-bold text-xl hover:bg-gray-100"
+                                                onClick={() => {
+                                                    const step = (itemSeleccionado.unidad_medida === 'kg' || itemSeleccionado.unidad_medida === 'litro') ? 0.5 : 1;
+                                                    setCantidad(Math.max(step, cantidad - step));
+                                                }}
+                                                className="w-10 h-10 rounded-full border border-gray-300 flex items-center justify-center font-bold text-xl hover:bg-gray-100 transition-colors"
                                             >
                                                 -
                                             </button>
-                                            <span className="text-2xl font-bold w-12 text-center">{cantidad}</span>
+                                            <div className="flex flex-col items-center w-20">
+                                                <input
+                                                    type="number"
+                                                    value={cantidad}
+                                                    onChange={(e) => {
+                                                        const val = parseFloat(e.target.value);
+                                                        if (val > 0) setCantidad(val);
+                                                    }}
+                                                    className="text-2xl font-bold text-center bg-transparent border-b border-gray-200 focus:border-[var(--primary)] focus:outline-none w-full"
+                                                />
+                                                <span className="text-xs text-gray-400 font-medium">
+                                                    {(itemSeleccionado.unidad_medida === 'kg' || itemSeleccionado.unidad_medida === 'litro') ? '0.5 pasos' : 'Unidades'}
+                                                </span>
+                                            </div>
                                             <button
-                                                onClick={() => setCantidad(cantidad + 1)}
-                                                className="w-10 h-10 rounded-full border border-[var(--primary)] bg-[var(--primary)] text-white flex items-center justify-center font-bold text-xl hover:bg-[var(--primary-light)]"
+                                                onClick={() => {
+                                                    const step = (itemSeleccionado.unidad_medida === 'kg' || itemSeleccionado.unidad_medida === 'litro') ? 0.5 : 1;
+                                                    setCantidad(cantidad + step);
+                                                }}
+                                                className="w-10 h-10 rounded-full border border-[var(--primary)] bg-[var(--primary)] text-white flex items-center justify-center font-bold text-xl hover:bg-[var(--primary-light)] transition-colors shadow-sm"
                                             >
                                                 +
                                             </button>

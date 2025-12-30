@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Phone, User, MapPin, Edit, Trash2 } from 'lucide-react';
-import { obtenerPedidos, eliminarPedido } from '@/lib/db/pedidos';
+import { ArrowLeft, Clock, Phone, User, MapPin, Edit, Trash2, Eye, X, CheckCircle2 } from 'lucide-react';
+import { obtenerPedidos, eliminarPedido, actualizarEstadoItem } from '@/lib/db/pedidos';
+import { generarLinkWhatsApp } from '@/lib/utils/whatsapp';
 import { supabase } from '@/lib/supabase';
 import type { PedidoCompleto } from '@/lib/db/pedidos';
 
@@ -12,6 +13,8 @@ export default function PedidosPage() {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [orden, setOrden] = useState<'recientes' | 'entrega'>('recientes');
+    const [selectedPedido, setSelectedPedido] = useState<PedidoCompleto | null>(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     useEffect(() => {
         cargarPedidos();
@@ -58,16 +61,43 @@ export default function PedidosPage() {
         try {
             await eliminarPedido(id);
             setPedidos(pedidos.filter(p => p.id !== id));
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error al eliminar pedido:', error);
-            alert('Error al eliminar el pedido.');
+            const mensaje = error.message || error.details || 'Error desconocido';
+            alert(`Error al eliminar el pedido: ${mensaje}`);
         }
     };
 
-    const generarLinkWhatsApp = (pedido: PedidoCompleto) => {
-        const mensaje = `Hola ${pedido.cliente}, confirmamos tu pedido de Hnos. Pienda para las ${pedido.horario_entrega}. Total: $${pedido.total}. ¡Gracias por tu preferencia!`;
-        return `https://wa.me/52${pedido.telefono.replace(/\D/g, '')}?text=${encodeURIComponent(mensaje)}`;
+    const handleCambiarEstadoItem = async (itemId: string, nuevoEstado: 'pendiente' | 'preparando' | 'listo') => {
+        try {
+            await actualizarEstadoItem(itemId, nuevoEstado);
+            // La suscripción en tiempo real debería actualizar la lista automáticamente,
+            // pero actualizamos el local si queremos feedback inmediato más suave
+            setPedidos(prev => prev.map(p => ({
+                ...p,
+                items_pedido: p.items_pedido.map(item =>
+                    item.id === itemId ? { ...item, estado: nuevoEstado } : item
+                )
+            })));
+
+            // Si el modal está abierto, también actualizar el pedido seleccionado
+            if (selectedPedido) {
+                setSelectedPedido(prev => {
+                    if (!prev) return null;
+                    return {
+                        ...prev,
+                        items_pedido: prev.items_pedido.map(item =>
+                            item.id === itemId ? { ...item, estado: nuevoEstado } : item
+                        )
+                    };
+                });
+            }
+        } catch (error) {
+            console.error('Error al cambiar estado del item:', error);
+        }
     };
+
+    // Link de WhatsApp eliminado en favor de la utilidad importada
 
     const getBadgeEstado = (estado: string) => {
         switch (estado) {
@@ -273,12 +303,22 @@ export default function PedidosPage() {
 
                                 <div className="flex gap-2">
                                     <button
-                                        onClick={() => alert('Función de editar - En desarrollo')}
+                                        onClick={() => {
+                                            setSelectedPedido(pedido);
+                                            setIsModalOpen(true);
+                                        }}
+                                        className="btn-primary text-sm py-1 px-3 flex items-center gap-1"
+                                    >
+                                        <Eye className="w-3 h-3" />
+                                        VER
+                                    </button>
+                                    <Link
+                                        href={`/pedidos/editar?id=${pedido.id}`}
                                         className="btn-outline text-sm py-1 px-3 flex items-center gap-1"
                                     >
                                         <Edit className="w-3 h-3" />
                                         Editar
-                                    </button>
+                                    </Link>
                                     <button
                                         onClick={() => handleEliminar(pedido.id, pedido.numero_pedido)}
                                         className="btn-danger text-sm py-1 px-3 flex items-center gap-1"
@@ -296,6 +336,138 @@ export default function PedidosPage() {
                             )}
                         </div>
                     ))}
+                </div>
+            )}
+
+            {/* Modal de Detalles / Cocina */}
+            {isModalOpen && selectedPedido && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+                    <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-zoom-in max-h-[90vh] flex flex-col">
+                        {/* Modal Header */}
+                        <div className="bg-[var(--primary)] text-white p-6 flex justify-between items-center">
+                            <div>
+                                <h3 className="text-2xl font-bold flex items-center gap-2">
+                                    Pedido #{selectedPedido.numero_pedido}
+                                    <span className={`text-xs px-2 py-1 rounded-full border border-white/30 bg-white/10`}>
+                                        {getTextoEstado(selectedPedido.estado)}
+                                    </span>
+                                </h3>
+                                <p className="text-blue-100 flex items-center gap-2 mt-1">
+                                    <User className="w-4 h-4" /> {selectedPedido.cliente}
+                                    <Clock className="w-4 h-4 ml-2" /> {selectedPedido.horario_entrega}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setIsModalOpen(false)}
+                                className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                            >
+                                <X className="w-6 h-6" />
+                            </button>
+                        </div>
+
+                        {/* Modal Content */}
+                        <div className="p-6 overflow-y-auto flex-1">
+                            <h4 className="text-sm font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-4">
+                                Items para Cocina
+                            </h4>
+                            <div className="space-y-4">
+                                {selectedPedido.items_pedido.map((item) => (
+                                    <div
+                                        key={item.id}
+                                        className={`p-4 rounded-xl border-2 transition-all ${item.estado === 'listo'
+                                            ? 'bg-green-50 border-green-200 opacity-75'
+                                            : item.estado === 'preparando'
+                                                ? 'bg-blue-50 border-blue-200 ring-2 ring-blue-100'
+                                                : 'bg-gray-50 border-gray-100'
+                                            }`}
+                                    >
+                                        <div className="flex justify-between items-start">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-3xl font-black text-[var(--primary)]">
+                                                        {Number(item.cantidad)}
+                                                    </span>
+                                                    <div>
+                                                        <span className="text-xl font-bold block">{item.items_menu.nombre}</span>
+                                                        <div className="flex gap-2 mt-1">
+                                                            {item.variantes_menu && (
+                                                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-md font-bold uppercase">
+                                                                    {item.variantes_menu.nombre}
+                                                                </span>
+                                                            )}
+                                                            {item.salsa && (
+                                                                <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-md font-bold uppercase">
+                                                                    + Salsa: {item.salsa.nombre}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                {item.notas && (
+                                                    <div className="mt-3 p-2 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 text-sm italic font-medium">
+                                                        "{item.notas}"
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Controles de Cocina */}
+                                            <div className="flex flex-col gap-2 min-w-[120px]">
+                                                {item.estado === 'pendiente' && (
+                                                    <button
+                                                        onClick={() => handleCambiarEstadoItem(item.id, 'preparando')}
+                                                        className="btn-primary text-xs py-2 w-full"
+                                                    >
+                                                        🎨 Empezar
+                                                    </button>
+                                                )}
+                                                {(item.estado === 'pendiente' || item.estado === 'preparando') && (
+                                                    <button
+                                                        onClick={() => handleCambiarEstadoItem(item.id, 'listo')}
+                                                        className="btn-success text-xs py-2 w-full flex items-center justify-center gap-1"
+                                                    >
+                                                        <CheckCircle2 className="w-3 h-3" />
+                                                        Listo
+                                                    </button>
+                                                )}
+                                                {item.estado === 'listo' && (
+                                                    <button
+                                                        onClick={() => handleCambiarEstadoItem(item.id, 'preparando')}
+                                                        className="text-[var(--text-secondary)] text-[10px] hover:underline"
+                                                    >
+                                                        Revertir a preparando
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {selectedPedido.notas && (
+                                <div className="mt-8">
+                                    <h4 className="text-sm font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
+                                        Notas Generales
+                                    </h4>
+                                    <p className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                        {selectedPedido.notas}
+                                    </p>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-4 bg-gray-50 border-t flex justify-between items-center">
+                            <div className="text-xs text-[var(--text-secondary)]">
+                                Pedido ID: {selectedPedido.id.slice(0, 8)}...
+                            </div>
+                            <button
+                                onClick={() => setIsModalOpen(false)}
+                                className="btn-outline py-2 px-6"
+                            >
+                                Cerrar
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

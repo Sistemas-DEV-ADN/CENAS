@@ -6,10 +6,16 @@ import { ArrowLeft, Plus, Edit2, Trash2, Power, PowerOff } from 'lucide-react';
 import { obtenerItemsMenu, agregarItemMenu, agregarVariante, actualizarItemMenu } from '@/lib/db/menu';
 import type { ItemMenuConVariantes, VarianteMenu } from '@/lib/db/menu';
 
+import ItemMenuModal from '@/app/components/ItemMenuModal';
+
 export default function MenuPage() {
     const [items, setItems] = useState<ItemMenuConVariantes[]>([]);
     const [loading, setLoading] = useState(true);
     const [categoriaSeleccionada, setCategoriaSeleccionada] = useState<string>('todas');
+
+    // Modal State
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingItem, setEditingItem] = useState<ItemMenuConVariantes | null>(null);
 
     useEffect(() => {
         cargarMenu();
@@ -25,6 +31,20 @@ export default function MenuPage() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleAgregarClick = () => {
+        setEditingItem(null);
+        setIsModalOpen(true);
+    };
+
+    const handleEditarClick = (item: ItemMenuConVariantes) => {
+        setEditingItem(item);
+        setIsModalOpen(true);
+    };
+
+    const handleGuardarExitoso = () => {
+        cargarMenu();
     };
 
     const handleToggleActivo = async (id: string, activo: boolean) => {
@@ -83,6 +103,13 @@ export default function MenuPage() {
 
     return (
         <div className="max-w-6xl mx-auto animate-fade-in">
+            <ItemMenuModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSave={handleGuardarExitoso}
+                itemToEdit={editingItem}
+            />
+
             {/* Header */}
             <div className="mb-8">
                 <Link
@@ -100,7 +127,7 @@ export default function MenuPage() {
                         </p>
                     </div>
                     <button
-                        onClick={() => alert('Función agregar item - En desarrollo')}
+                        onClick={handleAgregarClick}
                         className="btn-accent flex items-center gap-2"
                     >
                         <Plus className="w-4 h-4" />
@@ -137,7 +164,7 @@ export default function MenuPage() {
                     </p>
                     {categoriaSeleccionada === 'todas' && (
                         <button
-                            onClick={() => alert('Función agregar item - En desarrollo')}
+                            onClick={handleAgregarClick}
                             className="btn-accent inline-block"
                         >
                             Agregar Primer Item
@@ -162,6 +189,11 @@ export default function MenuPage() {
                                         </span>
                                         {!item.activo && (
                                             <span className="badge badge-danger">Inactivo</span>
+                                        )}
+                                        {item.precio_base && item.precio_base > 0 && (
+                                            <span className="text-gray-600 font-medium ml-2">
+                                                ${item.precio_base}
+                                            </span>
                                         )}
                                     </div>
                                     <p className="text-sm text-[var(--text-secondary)]">
@@ -189,7 +221,7 @@ export default function MenuPage() {
                                         )}
                                     </button>
                                     <button
-                                        onClick={() => alert('Función editar - En desarrollo')}
+                                        onClick={() => handleEditarClick(item)}
                                         className="btn-outline text-sm py-1 px-3 flex items-center gap-1"
                                     >
                                         <Edit2 className="w-3 h-3" />
@@ -206,10 +238,10 @@ export default function MenuPage() {
                                             Variantes disponibles:
                                         </h4>
                                         <button
-                                            onClick={() => alert('Función agregar variante - En desarrollo')}
+                                            onClick={() => handleEditarClick(item)}
                                             className="text-xs text-[var(--accent)] hover:underline"
                                         >
-                                            + Agregar variante
+                                            + Gestionar variantes
                                         </button>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
@@ -219,9 +251,9 @@ export default function MenuPage() {
                                                 className="badge badge-primary bg-[var(--primary)]/10 text-[var(--primary)] flex items-center gap-2"
                                             >
                                                 <span>{variante.nombre}</span>
-                                                {variante.descripcion && (
-                                                    <span className="text-xs opacity-70">
-                                                        ({variante.descripcion})
+                                                {variante.precio && (
+                                                    <span className="font-bold border-l pl-2 border-gray-300">
+                                                        ${variante.precio}
                                                     </span>
                                                 )}
                                             </div>

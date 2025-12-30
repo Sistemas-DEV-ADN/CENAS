@@ -40,6 +40,8 @@ export default function NuevoPedidoPage() {
     // Carrito de items
     const [carrito, setCarrito] = useState<ItemCarrito[]>([]);
 
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
     const totalPedido = carrito.reduce((sum, item) => sum + item.subtotal, 0);
 
     const handleAddItem = (item: any) => {
@@ -56,13 +58,38 @@ export default function NuevoPedidoPage() {
             notas: item.notas
         };
 
-        setCarrito([...carrito, newItem]);
+        if (editingIndex !== null) {
+            // Editar item existente
+            const newCarrito = [...carrito];
+            newCarrito[editingIndex] = newItem;
+            setCarrito(newCarrito);
+            setEditingIndex(null);
+        } else {
+            // Agregar nuevo
+            setCarrito([...carrito, newItem]);
+        }
+
         // Actualizar restante sugerido (Total - Anticipo)
-        // Esto es solo una sugerencia UX básica
-        const nuevoTotal = totalPedido + newItem.subtotal;
+        // Recalcular total con el nuevo estado hipotético
+        const listaParaCalculo = editingIndex !== null
+            ? carrito.map((it, idx) => idx === editingIndex ? newItem : it)
+            : [...carrito, newItem];
+
+        const nuevoTotal = listaParaCalculo.reduce((sum, i) => sum + i.subtotal, 0);
         setRestante((nuevoTotal - parseFloat(anticipo || '0')).toFixed(2));
     };
 
+    const handleEditItem = (index: number) => {
+        setEditingIndex(index);
+        setIsMenuOpen(true);
+    };
+
+    const handleCloseMenu = () => {
+        setIsMenuOpen(false);
+        setEditingIndex(null);
+    };
+
+    // ... handleSubmit ...
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (carrito.length === 0) {
@@ -76,23 +103,23 @@ export default function NuevoPedidoPage() {
             const items: Omit<ItemPedido, 'id' | 'pedido_id' | 'fecha_creacion'>[] = carrito.map(item => ({
                 item_menu_id: item.itemMenuId,
                 variante_id: item.varianteId,
-                cantidad: item.cantidad,
+                cantidad: Number(item.cantidad), // Asegurar que es número
                 notas: item.notas,
-                precio_unitario: item.precioUnitario,
-                subtotal: item.subtotal,
+                precio_unitario: Number(item.precioUnitario),
+                subtotal: Number(item.subtotal.toFixed(2)), // Redondear a 2 decimales para evitar errores de precisión
                 salsa_id: item.salsaId,
                 estado: 'pendiente'
             }));
 
-            await crearPedido(
+            const nuevoPedido = await crearPedido(
                 {
                     cliente,
                     origen,
                     telefono,
                     horario_entrega: horario,
-                    anticipo: parseFloat(anticipo),
-                    restante: parseFloat(restante),
-                    total: totalPedido,
+                    anticipo: Number(parseFloat(anticipo).toFixed(2)),
+                    restante: Number(parseFloat(restante).toFixed(2)),
+                    total: Number(totalPedido.toFixed(2)),
                     metodo_pago: metodoPago,
                     estado: 'pendiente',
                     notas,
@@ -100,10 +127,12 @@ export default function NuevoPedidoPage() {
                 items
             );
 
-            router.push('/pedidos');
+            // Redirigir a página de confirmación con el ID del pedido
+            router.push(`/pedidos/confirmacion?id=${nuevoPedido.id}`);
         } catch (error: any) {
             console.error('Error al crear pedido:', error);
-            alert('Error al crear el pedido. Por favor intente nuevamente.');
+            const mensaje = error.message || error.details || error.hint || 'Error desconocido al procesar la solicitud';
+            alert(`Error al crear el pedido: ${mensaje}`);
         } finally {
             setLoading(false);
         }
@@ -206,7 +235,10 @@ export default function NuevoPedidoPage() {
                         <button
                             type="button"
                             className="btn-primary flex items-center gap-2"
-                            onClick={() => setIsMenuOpen(true)}
+                            onClick={() => {
+                                setEditingIndex(null);
+                                setIsMenuOpen(true);
+                            }}
                         >
                             <Plus className="w-4 h-4" />
                             Agregar Platillo
@@ -249,6 +281,14 @@ export default function NuevoPedidoPage() {
                                     </div>
                                     <div className="flex items-center gap-4">
                                         <span className="font-bold text-lg">${item.subtotal.toFixed(2)}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleEditItem(index)}
+                                            className="text-gray-400 hover:text-blue-500 p-2 rounded-full hover:bg-blue-50 transition-colors"
+                                            title="Editar Platillo"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                                        </button>
                                         <button
                                             type="button"
                                             onClick={() => eliminarDelCarrito(index)}
@@ -357,8 +397,9 @@ export default function NuevoPedidoPage() {
             {/* Modal de Selección */}
             <MenuSelector
                 isOpen={isMenuOpen}
-                onClose={() => setIsMenuOpen(false)}
+                onClose={handleCloseMenu}
                 onSelect={handleAddItem}
+                initialItem={editingIndex !== null ? carrito[editingIndex] : null}
             />
         </div>
     );

@@ -158,12 +158,72 @@ export async function actualizarPedido(
  * Elimina un pedido y sus items
  */
 export async function eliminarPedido(id: string) {
+    // 1. Eliminar items primero (seguridad por si falta CASCADE en DB)
+    const { error: itemsError } = await supabase
+        .from('items_pedido')
+        .delete()
+        .eq('pedido_id', id);
+
+    if (itemsError) {
+        console.error('Error al eliminar items del pedido:', itemsError);
+        throw itemsError;
+    }
+
+    // 2. Eliminar el pedido
     const { error } = await supabase
         .from('pedidos')
         .delete()
         .eq('id', id);
 
     if (error) throw error;
+}
+
+/**
+ * Actualiza un pedido completo incluyendo sus items
+ */
+export async function actualizarPedidoCompleto(
+    id: string,
+    pedido: Partial<Omit<Pedido, 'id' | 'numero_pedido' | 'fecha_creacion'>>,
+    items: Omit<ItemPedido, 'id' | 'pedido_id' | 'fecha_creacion'>[]
+) {
+    // 1. Primero eliminamos todos los items actuales del pedido
+    const { error: deleteError } = await supabase
+        .from('items_pedido')
+        .delete()
+        .eq('pedido_id', id);
+
+    if (deleteError) throw deleteError;
+
+    // 2. Insertamos los nuevos items
+    const itemsData = items.map(item => ({
+        pedido_id: id,
+        item_menu_id: item.item_menu_id,
+        variante_id: item.variante_id || null,
+        salsa_id: item.salsa_id || null,
+        cantidad: item.cantidad,
+        precio_unitario: item.precio_unitario,
+        subtotal: item.subtotal,
+        notas: item.notas || '',
+        estado: item.estado
+    }));
+
+    const { error: itemsError } = await supabase
+        .from('items_pedido')
+        .insert(itemsData);
+
+    if (itemsError) throw itemsError;
+
+    // 3. Actualizamos el encabezado del pedido
+    const { data: pedidoActualizado, error: pedidoError } = await supabase
+        .from('pedidos')
+        .update(pedido)
+        .eq('id', id)
+        .select()
+        .single();
+
+    if (pedidoError) throw pedidoError;
+
+    return obtenerPedidoPorId(id);
 }
 
 /**
